@@ -13,6 +13,7 @@
 
  #include <Arduino.h>
  #include <SaIoTDeviceLib.h>
+ int aasdkasdljk;
 
 
  // Sensores
