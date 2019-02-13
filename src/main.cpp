@@ -11,25 +11,26 @@
  *
  * */
 
- #include <Arduino.h>
- #include <SaIoTDeviceLib.h>
+#include <Arduino.h>
+#include <SaIoTDeviceLib.h>
+#include <TimeLib.h>
+#include <SoftwareSerial.h>
+// Sensores
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP085_U.h>
+#include <Adafruit_ADXL345_U.h>
+// #include <Adafruit_L3GD20_U.h>
+#include <TinyGPS++.h>
 
-
- // Sensores
- #include <Wire.h>
- #include <Adafruit_Sensor.h>
- #include <Adafruit_BMP085_U.h>
- #include <Adafruit_ADXL345_U.h>
- // #include <Adafruit_L3GD20_U.h>
- //#include <DHT.h>
- #include <DHT_U.h>
-
-#define DHTPIN            D5         // Pin which is connected to the DHT sensor.
-#define DHTTYPE           DHT11     // DHT 11
+/* para uso do DHT temperatura e humidade*/
+#include <DHT_U.h>
+#define DHTPIN D5     // Pin which is connected to the DHT sensor.
+#define DHTTYPE DHT11 // DHT 11
 DHT_Unified dht(DHTPIN, DHTTYPE);
 void dhtDisplaySensorDetails(void);
 void dhtValue(void);
- // Adafruit_BMP085 bmp;
+// Adafruit_BMP085 bmp;
 Adafruit_BMP085_Unified bmp = Adafruit_BMP085_Unified(10085);
 void bmpDisplaySensorDetails(void);
 void temperatureValue(void);
@@ -45,43 +46,52 @@ void accelValue(void);
 // void dhtDisplaySensorDetails(void);
 // void dhtValue(void);
 
+//Pinos utilizados para conexao do modulo GY-NEO6MV2
+static const int RXPin = 4, TXPin = 3;
+//Objeto TinyGPS++
+TinyGPSPlus gps;
+//Conexao serial do modulo GPS
+SoftwareSerial Serial_GPS(RXPin, TXPin);
+//Ajuste o timezone de acordo com a regiao
+const int UTC_offset = -3;
 
 
 
-
-SaIoTDeviceLib barril("barril-raffe","40206","apenaspatricio@gmail.com");
-SaIoTSensor barril_t("t1","temperatura"," C","number");
-SaIoTSensor barril_a("a1","aceleração"," m/s2","number");
-SaIoTSensor barril_u("u1","umidade"," %","number");
-SaIoTSensor barril_v("d1","envazamento",".","string");
-SaIoTController barril_e("e1","env","button");
+/*  ADD SENSORS AND CONTROLLERS ON DEVICE  */
+SaIoTDeviceLib barril("barril-raffe", "40206", "apenaspatricio@gmail.com");
+SaIoTSensor barril_t("t1", "temperatura", " C", "number");
+SaIoTSensor barril_a("a1", "aceleração", " m/s2", "number");
+SaIoTSensor barril_u("u1", "umidade", " %", "number");
+SaIoTSensor barril_v("d1", "envazamento", ".", "string");
+SaIoTSensor barril_gps("gps", "local", "coordenadas", "point");
+SaIoTController barril_e("e1", "env", "button");
 
 #define timeToSend 5000
 
-
-
 WiFiClient espClient;
-void callback(char* topic, byte* payload, unsigned int length);
+void callback(char *topic, byte *payload, unsigned int length);
 String senha = "321321321321";
 unsigned long tDecorrido;
-String hora ="";
+String hora = "";
 
-
-void setup(){
+void setup()
+{
   Serial.begin(115200);
+  //Baud rate Modulo GPS
+  Serial_GPS.begin(9600);
   Serial.println("INICIO");
   delay(1000);
 
   dht.begin();
   dhtDisplaySensorDetails();
-  if(!bmp.begin())
+  if (!bmp.begin())
   {
     /* There was a problem detecting the BMP085 ... check your connections */
     Serial.print("Ooops, no BMP085 detected ... Check your wiring or I2C ADDR!");
   }
   bmpDisplaySensorDetails();
 
-  if(!accel.begin())
+  if (!accel.begin())
   {
     /* There was a problem detecting the ADXL345 ... check your connections */
     Serial.println("Ooops, no ADXL345 detected ... Check your wiring!");
@@ -99,92 +109,52 @@ void setup(){
   // }
   // // dhtDisplaySensorDetails();
 
-
   barril.addSensor(barril_t);
   barril.addSensor(barril_a);
   barril.addSensor(barril_u);
   barril.addSensor(barril_v);
+  barril.addSensor(barril_gps);
   barril.addController(barril_e);
   barril.preSetCom(espClient, callback);
   barril.startDefault(senha);
 
-	tDecorrido = millis();
+  tDecorrido = millis();
 }
 
+void loop()
+{
 
-
-
-
-
-void loop(){
-
-	if( ((millis() - tDecorrido)) >= timeToSend ){
+  if (((millis() - tDecorrido)) >= timeToSend)
+  {
     hora = SaIoTCom::getDateNow();
     temperatureValue();
     accelValue();
     dhtValue();
 
-		tDecorrido = millis();
-	}
-	barril.handleLoop();
+    tDecorrido = millis();
+  }
+  barril.handleLoop();
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-void callback(char* topic, byte* payload, unsigned int length){
+void callback(char *topic, byte *payload, unsigned int length)
+{
   String payloadS;
   Serial.print("Topic: ");
   Serial.println(topic);
-  for (unsigned int i=0;i<length;i++) {
+  for (unsigned int i = 0; i < length; i++)
+  {
     payloadS += (char)payload[i];
   }
-  if(strcmp(topic,barril.getSerial().c_str()) == 0){
+  if (strcmp(topic, barril.getSerial().c_str()) == 0)
+  {
     Serial.println("SerialLog: " + payloadS);
   }
-  if(strcmp(topic,(barril.getSerial()+barril_e.getKey()).c_str()) == 0){
+  if (strcmp(topic, (barril.getSerial() + barril_e.getKey()).c_str()) == 0)
+  {
 
     Serial.println("SerialLog: " + payloadS);
-    if (payloadS == "1") {
+    if (payloadS == "1")
+    {
       String ahora = SaIoTCom::getDateNow();
       barril_v.sendData(ahora, ahora);
       Serial.println("atualizou hora:" + ahora);
@@ -194,50 +164,51 @@ void callback(char* topic, byte* payload, unsigned int length){
   }
 }
 
-
-
-
-
-
-
-
-
-
-
 /**************************************************************************/
 /*
     Displays some basic information on this sensor from the unified
     sensor API sensor_t type (see Adafruit_Sensor for more information)
 */
 /**************************************************************************/
-void bmpDisplaySensorDetails(void){
+void bmpDisplaySensorDetails(void)
+{
   sensor_t sensor;
   bmp.getSensor(&sensor);
   Serial.println("------------------------------------");
-  Serial.print  ("Sensor:       "); Serial.println(sensor.name);
-  Serial.print  ("Driver Ver:   "); Serial.println(sensor.version);
-  Serial.print  ("Unique ID:    "); Serial.println(sensor.sensor_id);
-  Serial.print  ("Max Value:    "); Serial.print(sensor.max_value); Serial.println(" hPa");
-  Serial.print  ("Min Value:    "); Serial.print(sensor.min_value); Serial.println(" hPa");
-  Serial.print  ("Resolution:   "); Serial.print(sensor.resolution); Serial.println(" hPa");
+  Serial.print("Sensor:       ");
+  Serial.println(sensor.name);
+  Serial.print("Driver Ver:   ");
+  Serial.println(sensor.version);
+  Serial.print("Unique ID:    ");
+  Serial.println(sensor.sensor_id);
+  Serial.print("Max Value:    ");
+  Serial.print(sensor.max_value);
+  Serial.println(" hPa");
+  Serial.print("Min Value:    ");
+  Serial.print(sensor.min_value);
+  Serial.println(" hPa");
+  Serial.print("Resolution:   ");
+  Serial.print(sensor.resolution);
+  Serial.println(" hPa");
   Serial.println("------------------------------------");
   Serial.println("");
   delay(500);
 }
-void temperatureValue(void){
+void temperatureValue(void)
+{
   /* Get a new sensor event */
-    sensors_event_t event;
-    bmp.getEvent(&event);
+  sensors_event_t event;
+  bmp.getEvent(&event);
 
-    /* Display the results (barometric pressure is measure in hPa) */
-    if (event.pressure)
-    {
-      /* Display atmospheric pressue in hPa */
-      Serial.print("Pressure:    ");
-      Serial.print(event.pressure);
-      Serial.println(" hPa");
+  /* Display the results (barometric pressure is measure in hPa) */
+  if (event.pressure)
+  {
+    /* Display atmospheric pressue in hPa */
+    Serial.print("Pressure:    ");
+    Serial.print(event.pressure);
+    Serial.println(" hPa");
 
-      /* Calculating altitude with reasonable accuracy requires pressure    *
+    /* Calculating altitude with reasonable accuracy requires pressure    *
        * sea level pressure for your position at the moment the data is     *
        * converted, as well as the ambient temperature in degress           *
        * celcius.  If you don't have these values, a 'generic' value of     *
@@ -252,111 +223,155 @@ void temperatureValue(void){
        * For example, for Paris, France you can check the current mean      *
        * pressure and sea level at: http://bit.ly/16Au8ol                   */
 
-      /* First we get the current temperature from the BMP085 */
-      float temperature;
-      bmp.getTemperature(&temperature);
-      Serial.print("Temperature: ");
-      Serial.print(temperature);
-      Serial.println(" C");
-      barril_t.sendData(temperature,hora);
+    /* First we get the current temperature from the BMP085 */
+    float temperature;
+    bmp.getTemperature(&temperature);
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+    Serial.println(" C");
+    barril_t.sendData(temperature, hora);
 
-      /* Then convert the atmospheric pressure, and SLP to altitude         */
-      /* Update this next line with the current SLP for better results      */
-      float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
-      Serial.print("Altitude:    ");
-      Serial.print(bmp.pressureToAltitude(seaLevelPressure,
-                                          event.pressure));
-      Serial.println(" m");
-      Serial.println("");
-    }
-    else
-    {
-      Serial.println("Sensor error");
-    }
+    /* Then convert the atmospheric pressure, and SLP to altitude         */
+    /* Update this next line with the current SLP for better results      */
+    float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
+    Serial.print("Altitude:    ");
+    Serial.print(bmp.pressureToAltitude(seaLevelPressure,
+                                        event.pressure));
+    Serial.println(" m");
+    Serial.println("");
+  }
+  else
+  {
+    Serial.println("Sensor error");
+  }
 }
 
-void accelDisplaySensorDetails(void){
+void accelDisplaySensorDetails(void)
+{
   sensor_t sensor;
   accel.getSensor(&sensor);
   Serial.println("------------------------------------");
-  Serial.print  ("Sensor:       "); Serial.println(sensor.name);
-  Serial.print  ("Driver Ver:   "); Serial.println(sensor.version);
-  Serial.print  ("Unique ID:    "); Serial.println(sensor.sensor_id);
-  Serial.print  ("Max Value:    "); Serial.print(sensor.max_value); Serial.println(" m/s^2");
-  Serial.print  ("Min Value:    "); Serial.print(sensor.min_value); Serial.println(" m/s^2");
-  Serial.print  ("Resolution:   "); Serial.print(sensor.resolution); Serial.println(" m/s^2");
+  Serial.print("Sensor:       ");
+  Serial.println(sensor.name);
+  Serial.print("Driver Ver:   ");
+  Serial.println(sensor.version);
+  Serial.print("Unique ID:    ");
+  Serial.println(sensor.sensor_id);
+  Serial.print("Max Value:    ");
+  Serial.print(sensor.max_value);
+  Serial.println(" m/s^2");
+  Serial.print("Min Value:    ");
+  Serial.print(sensor.min_value);
+  Serial.println(" m/s^2");
+  Serial.print("Resolution:   ");
+  Serial.print(sensor.resolution);
+  Serial.println(" m/s^2");
   Serial.println("------------------------------------");
   Serial.println("");
 }
-void accelValue(void){
+void accelValue(void)
+{
   /* Get a new sensor event */
   sensors_event_t event;
   accel.getEvent(&event);
 
   /* Display the results (acceleration is measured in m/s^2) */
-  Serial.print("X: "); Serial.print(event.acceleration.x); Serial.print("  ");
-  Serial.print("Y: "); Serial.print(event.acceleration.y); Serial.print("  ");
-  Serial.print("Z: "); Serial.print(event.acceleration.z); Serial.print("  ");Serial.println("m/s^2 ");
+  Serial.print("X: ");
+  Serial.print(event.acceleration.x);
+  Serial.print("  ");
+  Serial.print("Y: ");
+  Serial.print(event.acceleration.y);
+  Serial.print("  ");
+  Serial.print("Z: ");
+  Serial.print(event.acceleration.z);
+  Serial.print("  ");
+  Serial.println("m/s^2 ");
   float maior = event.acceleration.x;
-  if (maior <= event.acceleration.y) {
+  if (maior <= event.acceleration.y)
+  {
     maior = event.acceleration.y;
-  } else if (maior <= event.acceleration.z) {
+  }
+  else if (maior <= event.acceleration.z)
+  {
     maior = event.acceleration.z;
   }
-  double modulo = sqrtf(pow(event.acceleration.x,2)+pow(event.acceleration.y,2)+pow(event.acceleration.z,2));
-  Serial.print("maior: "); Serial.println(maior);
-  barril_a.sendData(modulo,hora);
+  double modulo = sqrtf(pow(event.acceleration.x, 2) + pow(event.acceleration.y, 2) + pow(event.acceleration.z, 2));
+  Serial.print("maior: ");
+  Serial.println(maior);
+  barril_a.sendData(modulo, hora);
   Serial.println("modulo: " + String(modulo));
-
 }
 //
-void dhtDisplaySensorDetails(void){
+void dhtDisplaySensorDetails(void)
+{
   sensor_t sensor;
   dht.temperature().getSensor(&sensor);
   Serial.println("------------------------------------");
   Serial.println("Temperature");
-  Serial.print  ("Sensor:       "); Serial.println(sensor.name);
-  Serial.print  ("Driver Ver:   "); Serial.println(sensor.version);
-  Serial.print  ("Unique ID:    "); Serial.println(sensor.sensor_id);
-  Serial.print  ("Max Value:    "); Serial.print(sensor.max_value); Serial.println(" *C");
-  Serial.print  ("Min Value:    "); Serial.print(sensor.min_value); Serial.println(" *C");
-  Serial.print  ("Resolution:   "); Serial.print(sensor.resolution); Serial.println(" *C");
+  Serial.print("Sensor:       ");
+  Serial.println(sensor.name);
+  Serial.print("Driver Ver:   ");
+  Serial.println(sensor.version);
+  Serial.print("Unique ID:    ");
+  Serial.println(sensor.sensor_id);
+  Serial.print("Max Value:    ");
+  Serial.print(sensor.max_value);
+  Serial.println(" *C");
+  Serial.print("Min Value:    ");
+  Serial.print(sensor.min_value);
+  Serial.println(" *C");
+  Serial.print("Resolution:   ");
+  Serial.print(sensor.resolution);
+  Serial.println(" *C");
   Serial.println("------------------------------------");
   // Print humidity sensor details.
   dht.humidity().getSensor(&sensor);
   Serial.println("------------------------------------");
   Serial.println("Humidity");
-  Serial.print  ("Sensor:       "); Serial.println(sensor.name);
-  Serial.print  ("Driver Ver:   "); Serial.println(sensor.version);
-  Serial.print  ("Unique ID:    "); Serial.println(sensor.sensor_id);
-  Serial.print  ("Max Value:    "); Serial.print(sensor.max_value); Serial.println("%");
-  Serial.print  ("Min Value:    "); Serial.print(sensor.min_value); Serial.println("%");
-  Serial.print  ("Resolution:   "); Serial.print(sensor.resolution); Serial.println("%");
+  Serial.print("Sensor:       ");
+  Serial.println(sensor.name);
+  Serial.print("Driver Ver:   ");
+  Serial.println(sensor.version);
+  Serial.print("Unique ID:    ");
+  Serial.println(sensor.sensor_id);
+  Serial.print("Max Value:    ");
+  Serial.print(sensor.max_value);
+  Serial.println("%");
+  Serial.print("Min Value:    ");
+  Serial.print(sensor.min_value);
+  Serial.println("%");
+  Serial.print("Resolution:   ");
+  Serial.print(sensor.resolution);
+  Serial.println("%");
   Serial.println("------------------------------------");
 }
-void dhtValue(void){
+void dhtValue(void)
+{
   // Get temperature event and print its value.
   sensors_event_t event;
   dht.temperature().getEvent(&event);
-  if (isnan(event.temperature)) {
+  if (isnan(event.temperature))
+  {
     Serial.println("Error reading temperature!");
   }
-  else {
+  else
+  {
     Serial.print("Temperature: ");
     Serial.print(event.temperature);
     Serial.println(" *C");
   }
 
-
   // Get humidity event and print its value.
   dht.humidity().getEvent(&event);
-  if (isnan(event.relative_humidity)) {
+  if (isnan(event.relative_humidity))
+  {
     Serial.println("Error reading humidity!");
   }
-  else {
+  else
+  {
     Serial.print("Humidity: ");
     Serial.print(event.relative_humidity);
-    barril_u.sendData(event.relative_humidity,hora);
+    barril_u.sendData(event.relative_humidity, hora);
     Serial.println("%");
   }
 }
