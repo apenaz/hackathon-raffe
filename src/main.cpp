@@ -13,7 +13,6 @@
 
  #include <Arduino.h>
  #include <SaIoTDeviceLib.h>
- int aasdkasdljk;
 
 
  // Sensores
@@ -22,12 +21,16 @@
  #include <Adafruit_BMP085_U.h>
  #include <Adafruit_ADXL345_U.h>
  // #include <Adafruit_L3GD20_U.h>
- //#include <DHT.h>
+// #include <DHT.h>
  #include <DHT_U.h>
 
 #define DHTPIN            D5         // Pin which is connected to the DHT sensor.
 #define DHTTYPE           DHT11     // DHT 11
+#define LACRE 14 // D5 
+
+bool rompido = false;
 DHT_Unified dht(DHTPIN, DHTTYPE);
+void rompeu();
 void dhtDisplaySensorDetails(void);
 void dhtValue(void);
  // Adafruit_BMP085 bmp;
@@ -50,11 +53,12 @@ void accelValue(void);
 
 
 
-SaIoTDeviceLib barril("barril-raffe","40206","apenaspatricio@gmail.com");
+SaIoTDeviceLib barril("barril-raffe(ESP03)","BAR13022019","ricardo@email.com");
 SaIoTSensor barril_t("t1","temperatura"," C","number");
 SaIoTSensor barril_a("a1","aceleração"," m/s2","number");
 SaIoTSensor barril_u("u1","umidade"," %","number");
 SaIoTSensor barril_v("d1","envazamento",".","string");
+SaIoTSensor barril_lacre("l1","Lacre",".","boolean");
 SaIoTController barril_e("e1","env","button");
 
 #define timeToSend 5000
@@ -63,7 +67,7 @@ SaIoTController barril_e("e1","env","button");
 
 WiFiClient espClient;
 void callback(char* topic, byte* payload, unsigned int length);
-String senha = "321321321321";
+String senha = "12345678910";
 unsigned long tDecorrido;
 String hora ="";
 
@@ -72,7 +76,8 @@ void setup(){
   Serial.begin(115200);
   Serial.println("INICIO");
   delay(1000);
-
+  pinMode(LACRE, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(LACRE), rompeu, RISING);
   dht.begin();
   dhtDisplaySensorDetails();
   if(!bmp.begin())
@@ -100,7 +105,7 @@ void setup(){
   // }
   // // dhtDisplaySensorDetails();
 
-
+  barril.addSensor(barril_lacre)
   barril.addSensor(barril_t);
   barril.addSensor(barril_a);
   barril.addSensor(barril_u);
@@ -124,7 +129,6 @@ void loop(){
     temperatureValue();
     accelValue();
     dhtValue();
-
 		tDecorrido = millis();
 	}
 	barril.handleLoop();
@@ -360,4 +364,15 @@ void dhtValue(void){
     barril_u.sendData(event.relative_humidity,hora);
     Serial.println("%");
   }
+}
+
+
+
+////// LACRE /////
+void rompeu(){
+  if(!rompido){
+  Serial.println("ROMPEU");
+  lacre.sendData(true,hora)
+  rompido = true;
+}
 }
